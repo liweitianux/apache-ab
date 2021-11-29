@@ -2160,7 +2160,11 @@ static void usage(const char *progname)
 #endif
 
 #ifdef HAVE_TLSV1_X
+#ifdef SSL_OP_NO_TLSv1_3
+#define TLS1_X_HELP_MSG ", TLS1.1, TLS1.2, TLS1.3"
+#else
 #define TLS1_X_HELP_MSG ", TLS1.1, TLS1.2"
+#endif
 #else
 #define TLS1_X_HELP_MSG ""
 #endif
@@ -2559,7 +2563,11 @@ int main(int argc, const char * const argv[])
 #else /* #if OPENSSL_VERSION_NUMBER < 0x10100000L */
                 meth = TLS_client_method();
                 if (strncasecmp(opt_arg, "ALL", 3) == 0) {
+#ifdef TLS1_3_VERSION
+                    max_prot = TLS1_3_VERSION;
+#else
                     max_prot = TLS1_2_VERSION;
+#endif
 #ifndef OPENSSL_NO_SSL3
                     min_prot = SSL3_VERSION;
 #else
@@ -2576,6 +2584,11 @@ int main(int argc, const char * const argv[])
                 } else if (strncasecmp(opt_arg, "TLS1.2", 6) == 0) {
                     max_prot = TLS1_2_VERSION;
                     min_prot = TLS1_2_VERSION;
+#ifdef TLS1_3_VERSION
+                } else if (strncasecmp(opt_arg, "TLS1.3", 6) == 0) {
+                    max_prot = TLS1_3_VERSION;
+                    min_prot = TLS1_3_VERSION;
+#endif
                 } else if (strncasecmp(opt_arg, "TLS1", 4) == 0) {
                     max_prot = TLS1_VERSION;
                     min_prot = TLS1_VERSION;
