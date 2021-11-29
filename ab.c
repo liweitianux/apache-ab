@@ -362,6 +362,10 @@ BIO *bio_out,*bio_err;
 int tls_use_sni = 1;         /* used by default, -I disables it */
 const char *tls_sni = NULL; /* 'opt_host' if any, 'hostname' otherwise */
 #endif
+#ifdef BABASSL_VERSION_NUMBER
+enum { GMTLS_NONE, GMTLS_NTLS, GMTLS_RFC8998 };
+int gmtls_mode = GMTLS_NONE;
+#endif
 #endif
 
 apr_time_t start, lasttime, stoptime;
@@ -2169,12 +2173,22 @@ static void usage(const char *progname)
 #define TLS1_X_HELP_MSG ""
 #endif
 
+#ifdef BABASSL_VERSION_NUMBER
+#ifdef OPENSSL_NO_NTLS
+#define GMTLS_HELP_MSG ", RFC8998"
+#else
+#define GMTLS_HELP_MSG ", GMTLS, RFC8998"
+#endif
+#else
+#define GMTLS_HELP_MSG ""
+#endif
+
 #ifdef HAVE_TLSEXT
     fprintf(stderr, "    -I              Disable TLS Server Name Indication (SNI) extension\n");
 #endif
     fprintf(stderr, "    -Z ciphersuite  Specify SSL/TLS cipher suite (See openssl ciphers)\n");
     fprintf(stderr, "    -f protocol     Specify SSL/TLS protocol\n");
-    fprintf(stderr, "                    (" SSL2_HELP_MSG SSL3_HELP_MSG "TLS1" TLS1_X_HELP_MSG " or ALL)\n");
+    fprintf(stderr, "                    (" SSL2_HELP_MSG SSL3_HELP_MSG "TLS1" TLS1_X_HELP_MSG GMTLS_HELP_MSG " or ALL)\n");
     fprintf(stderr, "    -E certfile     Specify optional client certificate chain and private key\n");
 #endif
     exit(EINVAL);
@@ -2592,6 +2606,16 @@ int main(int argc, const char * const argv[])
                 } else if (strncasecmp(opt_arg, "TLS1", 4) == 0) {
                     max_prot = TLS1_VERSION;
                     min_prot = TLS1_VERSION;
+#ifdef BABASSL_VERSION_NUMBER
+#ifndef OPENSSL_NO_NTLS
+                } else if (strncasecmp(opt_arg, "GMTLS", 5) == 0) {
+                    gmtls_mode = GMTLS_NTLS;
+                    meth = NTLS_client_method();
+#endif
+                } else if (strncasecmp(opt_arg, "RFC8998", 7) == 0) {
+                    gmtls_mode = GMTLS_RFC8998;
+                    meth = TLS_client_method();
+#endif
                 }
 #endif /* #if OPENSSL_VERSION_NUMBER < 0x10100000L */
                 break;
@@ -2669,10 +2693,26 @@ int main(int argc, const char * const argv[])
     if (ssl_cipher != NULL) {
         if (!SSL_CTX_set_cipher_list(ssl_ctx, ssl_cipher)) {
             fprintf(stderr, "error setting cipher list [%s]\n", ssl_cipher);
-        ERR_print_errors_fp(stderr);
-        exit(1);
+            ERR_print_errors_fp(stderr);
+            exit(1);
+        }
     }
+#ifdef BABASSL_VERSION_NUMBER
+    if (gmtls_mode == GMTLS_NTLS) {
+        SSL_CTX_enable_ntls(ssl_ctx);
+        if (!SSL_CTX_set_cipher_list(ssl_ctx, "ECC-SM2-SM4-GCM-SM3:ECC-SM2-SM4-CBC-SM3")) {
+            fprintf(stderr, "error setting GMTLS cipher list\n");
+            ERR_print_errors_fp(stderr);
+            exit(1);
+        }
+    } else if (gmtls_mode == GMTLS_RFC8998) {
+        if (!SSL_CTX_set_ciphersuites(ssl_ctx, "TLS_SM4_GCM_SM3:TLS_SM4_CCM_SM3")) {
+            fprintf(stderr, "error setting RFC8998 cipher suites\n");
+            ERR_print_errors_fp(stderr);
+            exit(1);
+        }
     }
+#endif
     if (verbosity >= 3) {
         SSL_CTX_set_info_callback(ssl_ctx, ssl_state_cb);
     }
